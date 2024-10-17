@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import axios from 'axios';
-import Papa from 'papaparse';
 
 const Upload = () => {
   const [file, setFile] = useState(null);
@@ -27,39 +26,50 @@ const Upload = () => {
     setInsights('');
 
     try {
-      // Read the file content
-      const reader = new FileReader();
-      reader.readAsText(file);
+      // Step 1: Upload the file as an Assistant resource
+      const formData = new FormData();
+      formData.append('file', file);
 
-      reader.onload = async () => {
-        const fileContent = reader.result;
-        setProgress(30); // Simulate progress after reading file
+      const uploadResponse = await axios.post('/api/uploadAssistantResource', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
 
-        // Parse the file content to determine if it's JSON or CSV
-        let parsedData;
+      const { resource } = uploadResponse.data;
+      const fileId = resource.id;
+
+      setProgress(30); // Simulate progress after uploading file
+
+      // Step 2: Create a thread with the uploaded file
+      const threadResponse = await axios.post('/api/createThread', {
+        message: 'Create 3 data visualizations based on the trends in this file.',
+        file_id: fileId,
+      });
+
+      const { thread, run_id } = threadResponse.data;
+
+      setProgress(60); // Simulate progress after creating thread
+
+      // Step 3: Poll for run completion (implement polling logic as needed)
+      // For simplicity, we'll wait for a fixed time. In production, implement proper polling.
+      setTimeout(async () => {
         try {
-          parsedData = JSON.parse(fileContent);
-        } catch (jsonError) {
-          // If JSON parsing fails, parse as CSV
-          const parsed = Papa.parse(fileContent, { header: true });
-          parsedData = parsed.data;
+          const runResponse = await axios.get(`/api/getRunResult?run_id=${run_id}`);
+          const { insights } = runResponse.data;
+
+          setInsights(insights);
+          setProgress(100);
+        } catch (runError) {
+          console.error('Run Result Error:', runError.response ? runError.response.data : runError.message);
+          setError('Failed to retrieve insights.');
+          setProgress(0);
         }
-
-        setProgress(50); // Update progress after parsing
-
-        // Send parsed data to the serverless function
-        const response = await axios.post('/api/analyze', { fileContent: JSON.stringify(parsedData) });
-
-        setInsights(response.data.insights);
-        setProgress(100); // Upload and analysis complete
-      };
-
-      reader.onerror = () => {
-        setError('Failed to read file.');
-      };
+      }, 10000); // Wait for 10 seconds before fetching results
     } catch (err) {
-      console.error(err);
+      console.error('Upload Error:', err.response ? err.response.data : err.message);
       setError('File upload failed.');
+      setProgress(0);
     }
   };
 
