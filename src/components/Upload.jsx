@@ -8,6 +8,7 @@ const Upload = () => {
   const [insights, setInsights] = useState('');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Handle file selection
   const handleFileChange = (e) => {
@@ -24,52 +25,95 @@ const Upload = () => {
     setError('');
     setProgress(0);
     setInsights('');
+    setLoading(true);
 
     try {
-      // Step 1: Upload the file as an Assistant resource
+      // Step 1: Upload the file
       const formData = new FormData();
       formData.append('file', file);
 
-      const uploadResponse = await axios.post('/api/uploadAssistantResource', formData, {
+      const uploadResponse = await axios.post('/api/uploadFile', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
-      const { resource } = uploadResponse.data;
-      const fileId = resource.id;
+      const { file_id } = uploadResponse.data;
+      setProgress(20);
 
-      setProgress(30); // Simulate progress after uploading file
+      // Step 2: Create a Thread
+      const threadResponse = await axios.post('/api/createThread');
+      const { thread_id } = threadResponse.data;
+      setProgress(40);
 
-      // Step 2: Create a thread with the uploaded file
-      const threadResponse = await axios.post('/api/createThread', {
+      // Step 3: Add a Message to the Thread
+      const messageResponse = await axios.post('/api/addMessage', {
+        thread_id: thread_id,
         message: 'Create 3 data visualizations based on the trends in this file.',
-        file_id: fileId,
+        file_id: file_id,
+      });
+      const { message_id } = messageResponse.data;
+      setProgress(60);
+
+      // Step 4: Create a Run
+      // Assuming you have stored the Assistant ID in an environment variable or elsewhere
+      const assistant_id = process.env.REACT_APP_ASSISTANT_ID;
+
+      if (!assistant_id) {
+        throw new Error('Assistant ID is not configured.');
+      }
+
+      const runResponse = await axios.post('/api/createRun', {
+        thread_id: thread_id,
+        assistant_id: assistant_id,
+        instructions: 'Please address the user as Jane Doe. The user has a premium account.',
       });
 
-      const { thread, run_id } = threadResponse.data;
+      const { run_id } = runResponse.data;
+      setProgress(80);
 
-      setProgress(60); // Simulate progress after creating thread
+      // Step 5: Poll for Run Result
+      const pollInterval = 5000; // 5 seconds
+      const maxAttempts = 12; // Poll for up to 1 minute
+      let attempts = 0;
 
-      // Step 3: Poll for run completion (implement polling logic as needed)
-      // For simplicity, we'll wait for a fixed time. In production, implement proper polling.
-      setTimeout(async () => {
+      const pollRunResult = async () => {
         try {
-          const runResponse = await axios.get(`/api/getRunResult?run_id=${run_id}`);
-          const { insights } = runResponse.data;
+          const runResultResponse = await axios.get(`/api/getRunResult?run_id=${run_id}`);
+          const data = runResultResponse.data;
 
-          setInsights(insights);
-          setProgress(100);
-        } catch (runError) {
-          console.error('Run Result Error:', runError.response ? runError.response.data : runError.message);
+          if (data.insights) {
+            setInsights(data.insights);
+            setProgress(100);
+            setLoading(false);
+          } else if (data.status === 'in_progress') {
+            if (attempts < maxAttempts) {
+              attempts += 1;
+              setTimeout(pollRunResult, pollInterval);
+            } else {
+              setError('Run is taking too long. Please try again later.');
+              setProgress(0);
+              setLoading(false);
+            }
+          } else if (data.status === 'failed') {
+            setError('Assistant failed to generate insights.');
+            setProgress(0);
+            setLoading(false);
+          }
+        } catch (pollError) {
+          console.error('Polling Error:', pollError.response ? pollError.response.data : pollError.message);
           setError('Failed to retrieve insights.');
           setProgress(0);
+          setLoading(false);
         }
-      }, 10000); // Wait for 10 seconds before fetching results
+      };
+
+      pollRunResult();
     } catch (err) {
       console.error('Upload Error:', err.response ? err.response.data : err.message);
-      setError('File upload failed.');
+      setError(err.response?.data?.message || 'File upload failed.');
       setProgress(0);
+      setLoading(false);
     }
   };
 
@@ -89,9 +133,10 @@ const Upload = () => {
       />
       <button
         onClick={handleUpload}
-        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:opacity-50"
+        disabled={loading}
       >
-        Upload
+        {loading ? 'Processing...' : 'Upload'}
       </button>
       {progress > 0 && (
         <div className="mt-4">

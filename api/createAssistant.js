@@ -15,16 +15,18 @@ export default async function handler(req, res) {
   const { name, description } = req.body;
 
   try {
-    const assistant = await openai.createAssistant({
-      name,
-      description,
-      model: 'gpt-4',
-      tools: [{ type: 'code_interpreter' }],
+    const assistant = await openai.beta.assistants.create({
+      name: name || "Math Tutor",
+      instructions: description || "You are a personal math tutor. Write and run code to answer math questions.",
+      tools: [{ type: "code_interpreter" }],
+      model: "gpt-4o",
     });
 
-    res.status(200).json({ assistant });
+    // Save Assistant ID to environment variable or database as needed
+    // For simplicity, we'll return it in the response
+    res.status(200).json({ assistant_id: assistant.id });
   } catch (error) {
     console.error('Assistant Creation Error:', error.response ? error.response.data : error.message);
-    res.status(500).json({ message: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error', error: error.response ? error.response.data : error.message });
   }
 }
