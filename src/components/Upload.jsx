@@ -218,4 +218,4 @@ const Upload = () => {
   );
 };
 
-module.exports = Upload;
+export default Upload; // ES6 default export

@@ -30,4 +30,4 @@ const Visualization = ({ data, title }) => {
   );
 };
 
-module.exports = Visualization;
+export default Visualization; // ES6 default export

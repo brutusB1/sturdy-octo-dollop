@@ -1,6 +1,6 @@
 // api/uploadFile.js
 
-const nextConnect = require('next-connect'); // Changed from import to require
+const nextConnect = require('next-connect');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
@@ -82,7 +82,7 @@ handler.post(async (req, res) => {
 
 module.exports = handler;
 
-export const config = {
+module.exports.config = {
   api: {
     bodyParser: false, // Disallow body parsing, consume as stream
   },
