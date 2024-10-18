@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import axios from 'axios';
+import usePolling from '../hooks/usePolling';
 
 const Upload = () => {
   const [file, setFile] = useState(null);
@@ -10,9 +11,15 @@ const Upload = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Custom hook for polling
+  const { startPolling, stopPolling } = usePolling();
+
   // Handle file selection
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
+    setInsights('');
+    setError('');
+    setProgress(0);
   };
 
   // Handle file upload and analysis
@@ -23,8 +30,8 @@ const Upload = () => {
     }
 
     setError('');
-    setProgress(0);
     setInsights('');
+    setProgress(0);
     setLoading(true);
 
     try {
@@ -44,7 +51,7 @@ const Upload = () => {
       // Step 2: Create a Thread
       const threadResponse = await axios.post('/api/createThread');
       const { thread_id } = threadResponse.data;
-      setProgress(40);
+      setProgress(30);
 
       // Step 3: Add a Message to the Thread
       const messageResponse = await axios.post('/api/addMessage', {
@@ -53,10 +60,9 @@ const Upload = () => {
         file_id: file_id,
       });
       const { message_id } = messageResponse.data;
-      setProgress(60);
+      setProgress(40);
 
       // Step 4: Create a Run
-      // Assuming you have stored the Assistant ID in an environment variable or elsewhere
       const assistant_id = process.env.REACT_APP_ASSISTANT_ID;
 
       if (!assistant_id) {
@@ -67,17 +73,14 @@ const Upload = () => {
         thread_id: thread_id,
         assistant_id: assistant_id,
         instructions: 'Please address the user as Jane Doe. The user has a premium account.',
+        tools: [{ type: 'code_interpreter' }],
       });
 
       const { run_id } = runResponse.data;
-      setProgress(80);
+      setProgress(50);
 
-      // Step 5: Poll for Run Result
-      const pollInterval = 5000; // 5 seconds
-      const maxAttempts = 12; // Poll for up to 1 minute
-      let attempts = 0;
-
-      const pollRunResult = async () => {
+      // Step 5: Start Polling for Run Result
+      startPolling(async () => {
         try {
           const runResultResponse = await axios.get(`/api/getRunResult?run_id=${run_id}`);
           const data = runResultResponse.data;
@@ -86,29 +89,23 @@ const Upload = () => {
             setInsights(data.insights);
             setProgress(100);
             setLoading(false);
-          } else if (data.status === 'in_progress') {
-            if (attempts < maxAttempts) {
-              attempts += 1;
-              setTimeout(pollRunResult, pollInterval);
-            } else {
-              setError('Run is taking too long. Please try again later.');
-              setProgress(0);
-              setLoading(false);
-            }
+            stopPolling();
           } else if (data.status === 'failed') {
             setError('Assistant failed to generate insights.');
             setProgress(0);
             setLoading(false);
+            stopPolling();
+          } else {
+            setProgress((prev) => (prev < 90 ? prev + 10 : prev));
           }
         } catch (pollError) {
           console.error('Polling Error:', pollError.response ? pollError.response.data : pollError.message);
           setError('Failed to retrieve insights.');
           setProgress(0);
           setLoading(false);
+          stopPolling();
         }
-      };
-
-      pollRunResult();
+      }, 5000); // Poll every 5 seconds
     } catch (err) {
       console.error('Upload Error:', err.response ? err.response.data : err.message);
       setError(err.response?.data?.message || 'File upload failed.');
@@ -118,42 +115,52 @@ const Upload = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-4">Upload Video Engagement Data</h2>
-      <input
-        type="file"
-        accept=".csv, .json"
-        onChange={handleFileChange}
-        className="mb-4 block w-full text-sm text-gray-500
-        file:mr-4 file:py-2 file:px-4
-        file:rounded file:border-0
-        file:text-sm file:font-semibold
-        file:bg-blue-50 file:text-blue-700
-        hover:file:bg-blue-100"
-      />
+    <div className="max-w-lg mx-auto p-6 bg-white shadow-md rounded-md">
+      <h2 className="text-2xl font-semibold mb-4 text-center">Video Engagement Analysis</h2>
+      <div className="mb-4">
+        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="file">
+          Select CSV or JSON File
+        </label>
+        <input
+          type="file"
+          id="file"
+          accept=".csv, .json, .png, .jpg, .jpeg, .gif, .webp"
+          onChange={handleFileChange}
+          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring focus:border-blue-300"
+        />
+      </div>
       <button
         onClick={handleUpload}
-        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:opacity-50"
+        className={`w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors ${
+          loading ? 'opacity-50 cursor-not-allowed' : ''
+        }`}
         disabled={loading}
       >
-        {loading ? 'Processing...' : 'Upload'}
+        {loading ? 'Processing...' : 'Upload & Analyze'}
       </button>
+
       {progress > 0 && (
         <div className="mt-4">
-          <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
             <div
               className="bg-blue-600 h-2.5 rounded-full"
               style={{ width: `${progress}%` }}
             ></div>
           </div>
-          <p className="text-sm text-gray-600 mt-1">
-            {progress < 100 ? `Processing: ${progress}%` : 'Completed'}
+          <p className="text-sm text-gray-600 mt-1 text-center">
+            {progress < 100 ? `Processing: ${progress}%` : 'Analysis Complete'}
           </p>
         </div>
       )}
-      {error && <div className="mt-4 text-red-500">{error}</div>}
+
+      {error && (
+        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md">
+          {error}
+        </div>
+      )}
+
       {insights && (
-        <div className="mt-6 p-4 bg-gray-100 rounded">
+        <div className="mt-6 p-4 bg-green-100 text-green-800 rounded-md">
           <h3 className="text-xl font-semibold mb-2">Insights:</h3>
           <pre className="whitespace-pre-wrap">{insights}</pre>
         </div>
