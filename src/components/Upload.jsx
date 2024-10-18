@@ -2,9 +2,13 @@
 
 import React, { useState } from 'react';
 import axios from 'axios';
-import usePolling from '../hooks/usePolling';
+import { ClipLoader } from 'react-spinners';
+import { toast } from 'react-toastify';
+import Visualization from './Visualization'; // Ensure this component is created
+import usePolling from '../hooks/usePolling'; // Ensure this hook is created
 
 const Upload = () => {
+  // State variables
   const [file, setFile] = useState(null);
   const [insights, setInsights] = useState('');
   const [progress, setProgress] = useState(0);
@@ -16,16 +20,40 @@ const Upload = () => {
 
   // Handle file selection
   const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setInsights('');
-    setError('');
-    setProgress(0);
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      // Validate file type
+      const allowedTypes = [
+        'text/csv',
+        'application/json',
+        'image/png',
+        'image/jpeg',
+        'image/gif',
+        'image/webp',
+      ];
+      if (!allowedTypes.includes(selectedFile.type)) {
+        toast.error('Unsupported file type. Please select a valid file.');
+        return;
+      }
+
+      // Validate file size (e.g., max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (selectedFile.size > maxSize) {
+        toast.error('File size exceeds the 5MB limit.');
+        return;
+      }
+
+      setFile(selectedFile);
+      setInsights('');
+      setError('');
+      setProgress(0);
+    }
   };
 
   // Handle file upload and analysis
   const handleUpload = async () => {
     if (!file) {
-      setError('Please select a file to upload.');
+      toast.error('Please select a file to upload.');
       return;
     }
 
@@ -39,6 +67,7 @@ const Upload = () => {
       const formData = new FormData();
       formData.append('file', file);
 
+      toast.info('Uploading file...', { autoClose: 2000 });
       const uploadResponse = await axios.post('/api/uploadFile', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -47,11 +76,13 @@ const Upload = () => {
 
       const { file_id } = uploadResponse.data;
       setProgress(20);
+      toast.success('File uploaded successfully!', { autoClose: 2000 });
 
       // Step 2: Create a Thread
       const threadResponse = await axios.post('/api/createThread');
       const { thread_id } = threadResponse.data;
       setProgress(30);
+      toast.success('Thread created successfully!', { autoClose: 2000 });
 
       // Step 3: Add a Message to the Thread
       const messageResponse = await axios.post('/api/addMessage', {
@@ -61,6 +92,7 @@ const Upload = () => {
       });
       const { message_id } = messageResponse.data;
       setProgress(40);
+      toast.success('Message added to thread!', { autoClose: 2000 });
 
       // Step 4: Create a Run
       const assistant_id = process.env.REACT_APP_ASSISTANT_ID;
@@ -78,6 +110,7 @@ const Upload = () => {
 
       const { run_id } = runResponse.data;
       setProgress(50);
+      toast.success('Run initiated!', { autoClose: 2000 });
 
       // Step 5: Start Polling for Run Result
       startPolling(async () => {
@@ -90,11 +123,13 @@ const Upload = () => {
             setProgress(100);
             setLoading(false);
             stopPolling();
+            toast.success('Insights generated successfully!', { autoClose: 2000 });
           } else if (data.status === 'failed') {
             setError('Assistant failed to generate insights.');
             setProgress(0);
             setLoading(false);
             stopPolling();
+            toast.error('Run failed. Please try again.', { autoClose: 3000 });
           } else {
             setProgress((prev) => (prev < 90 ? prev + 10 : prev));
           }
@@ -104,6 +139,7 @@ const Upload = () => {
           setProgress(0);
           setLoading(false);
           stopPolling();
+          toast.error('Error retrieving insights.', { autoClose: 3000 });
         }
       }, 5000); // Poll every 5 seconds
     } catch (err) {
@@ -111,6 +147,7 @@ const Upload = () => {
       setError(err.response?.data?.message || 'File upload failed.');
       setProgress(0);
       setLoading(false);
+      toast.error(err.response?.data?.message || 'File upload failed.', { autoClose: 3000 });
     }
   };
 
@@ -119,7 +156,7 @@ const Upload = () => {
       <h2 className="text-2xl font-semibold mb-4 text-center">Video Engagement Analysis</h2>
       <div className="mb-4">
         <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="file">
-          Select CSV or JSON File
+          Select CSV, JSON, or Image File
         </label>
         <input
           type="file"
@@ -131,19 +168,19 @@ const Upload = () => {
       </div>
       <button
         onClick={handleUpload}
-        className={`w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors ${
+        className={`w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors flex items-center justify-center ${
           loading ? 'opacity-50 cursor-not-allowed' : ''
         }`}
         disabled={loading}
       >
-        {loading ? 'Processing...' : 'Upload & Analyze'}
+        {loading ? <ClipLoader size={20} color="#ffffff" /> : 'Upload & Analyze'}
       </button>
 
       {progress > 0 && (
         <div className="mt-4">
           <div className="w-full bg-gray-200 rounded-full h-2.5">
             <div
-              className="bg-blue-600 h-2.5 rounded-full"
+              className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
               style={{ width: `${progress}%` }}
             ></div>
           </div>
@@ -162,7 +199,19 @@ const Upload = () => {
       {insights && (
         <div className="mt-6 p-4 bg-green-100 text-green-800 rounded-md">
           <h3 className="text-xl font-semibold mb-2">Insights:</h3>
-          <pre className="whitespace-pre-wrap">{insights}</pre>
+          <pre className="whitespace-pre-wrap mb-4">{insights}</pre>
+          {/* Example visualization data */}
+          {/* Replace the following with actual data parsed from insights */}
+          <Visualization
+            data={[
+              { name: 'January', Engagement: 400 },
+              { name: 'February', Engagement: 300 },
+              { name: 'March', Engagement: 500 },
+              { name: 'April', Engagement: 200 },
+              { name: 'May', Engagement: 700 },
+            ]}
+            title="Monthly Engagement Trends"
+          />
         </div>
       )}
     </div>
