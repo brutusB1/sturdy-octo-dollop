@@ -20,4 +20,4 @@ const usePolling = () => {
   return { startPolling, stopPolling };
 };
 
-export default usePolling;
+module.exports = usePolling;
